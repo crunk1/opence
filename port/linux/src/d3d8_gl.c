@@ -7886,6 +7886,11 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			window[3] = height;
 			hdr_calibration_draw(back_buffer, window);
 		}
+#ifdef HALO_MACOS
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+#endif
 		glBindVertexArray(device.vertex_array);
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 		platform_video_swap();

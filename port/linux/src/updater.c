@@ -29,7 +29,7 @@ update.h's: posix_update.c on Linux, win32_update.c on Windows.
 #include "port_config.h"
 #include "update.h"
 
-#if !defined(HALO_ANDROID) && !defined(HALO_WEB)
+#if !defined(HALO_ANDROID) && !defined(HALO_WEB) && !defined(HALO_MACOS)
 
 #include "zlib_prefixed.h"
 
@@ -1020,7 +1020,7 @@ int updater_server_install_poll(char *error, int size)
 	return -1;
 }
 
-#ifdef HALO_WEB
+#if defined(HALO_WEB) || defined(HALO_MACOS)
 #include <SDL3/SDL.h>
 
 /* (the site updates itself: port/web/site/sw.js) */
