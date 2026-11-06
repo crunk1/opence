@@ -449,6 +449,11 @@ void host_sdl_get_clipboard_text(char *buffer, uint32_t size)
 	SDL_free(text);
 }
 
+int host_sdl_open_url(const char *url)
+{
+	return SDL_OpenURL(url) ? 1 : 0;
+}
+
 int host_sdl_show_simple_message_box(uint32_t flags, const char *title, const char *message)
 {
 	return SDL_ShowSimpleMessageBox((SDL_MessageBoxFlags)flags, title, message, NULL) ? 1 : 0;

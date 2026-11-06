@@ -66,6 +66,12 @@ char *SDL_GetClipboardText(void)
 	return strdup(buffer);
 }
 
+/* (the browser, on a Discord link's page: player_link.c) */
+bool SDL_OpenURL(const char *url)
+{
+	return host_sdl_open_url(url) != 0;
+}
+
 bool SDL_ShowSimpleMessageBox(SDL_MessageBoxFlags flags, const char *title, const char *message, SDL_Window *window)
 {
 	(void)window;
