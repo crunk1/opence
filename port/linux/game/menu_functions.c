@@ -3720,6 +3720,8 @@ VOTING), PASSWORD's and MAP SHARING's (its help_strings, tools/port_settings.py)
 #define MAP_SHARE_OPTIONS_HELP 15
 /* (LISTING's PUBLIC on a machine with a publisher key: server_master.c) */
 #define SERVER_LISTING_PUBLISHER_HELP 16
+/* (NEW SEED EACH GAME's OFF and ON: network.reroll_random_seed) */
+#define SERVER_SEED_HELP 17
 
 /* whether this machine has a publisher key (read as Server Setup opens) */
 static boolean server_settings_publisher;
@@ -3806,6 +3808,9 @@ static boolean server_settings_initialize(struct widget_instance *list)
 	back from an option's screen) */
 	if ((spinner = named(list, "listing_spinner", 0)) != NULL)
 		spinner->parameters.list.selected_index = server_settings_private() ? 1 : 0;
+	/* (NEW SEED EACH GAME: the host's network.reroll_random_seed) */
+	if ((spinner = named(list, "seed_spinner", 0)) != NULL)
+		spinner->parameters.list.selected_index = config_boolean("network.reroll_random_seed") ? 1 : 0;
 	p2p_set_hosting_public(multiplayer.mode == _multiplayer_mode_host_internet && !server_settings_private());
 	{
 		unsigned char public_key[SERVER_MASTER_PUBLIC_KEY_SIZE];
@@ -3892,6 +3897,25 @@ static void server_settings_update(struct widget_instance *list)
 			help->parameters.text_box.string_list_index = public && server_settings_publisher ?
 				SERVER_LISTING_PUBLISHER_HELP : (short)(10 + spinner->parameters.list.selected_index);
 		}
+	}
+	/* NEW SEED EACH GAME (network.reroll_random_seed: a new random seed for
+	each game of the lobby after the first, network_server_manager.c's
+	network_game_server_reset_to_pregame), a multiplayer game's. Its help is
+	its choice's */
+	row = named(list, "op_seed", 0);
+	visible_set(row, !hosting_cooperative());
+	if ((spinner = named(list, "seed_spinner", 0)) != NULL && row && row->visible)
+	{
+		boolean reroll = spinner->parameters.list.selected_index == 1;
+		struct widget_instance *help = list->parameters.list.extended_description;
+
+		if (reroll != (config_boolean("network.reroll_random_seed") != 0) &&
+			!config_write("network.reroll_random_seed", reroll ? "true" : "false"))
+		{
+			platform_log("menus: could not write network.reroll_random_seed to config.toml");
+		}
+		if (help && list->focused_child == row)
+			help->parameters.text_box.string_list_index = (short)(SERVER_SEED_HELP + (reroll ? 1 : 0));
 	}
 	/* PASSWORD (a PUBLIC internet game's): its stars, NONE if it has none */
 	row = named(list, "op_password", 0);

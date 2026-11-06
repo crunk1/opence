@@ -627,6 +627,13 @@ static const struct config_setting config_settings[] =
 		"in everyone's server browser: anyone can see and join it) or, false,\n"
 		"PRIVATE (only players with its invite link can join). Server Setup's\n"
 		"LISTING changes it for each game." },
+	{ "network.reroll_random_seed", _config_boolean, "false", "HALO_NET_REROLL_RANDOM_SEED", _environment_value,
+		_platform_all,
+		"Hosting: a new random seed for each game of the lobby after the first,\n"
+		"so that a game need not start the players at the spawn points of the\n"
+		"game before. False, as on the Xbox: the seed drawn when the lobby was\n"
+		"made serves every game of it. Server Setup's NEW SEED EACH GAME\n"
+		"changes it." },
 	{ "network.voice_lobby", _config_boolean, "true", "HALO_NET_VOICE_LOBBY", _environment_value, _platform_all,
 		"Hosting: voice chat in the lobby, before and after a game, where every\n"
 		"player hears every other." },
