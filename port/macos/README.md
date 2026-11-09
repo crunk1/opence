@@ -7,13 +7,25 @@ networking and renderer as the other ports, for Intel and Apple Silicon Macs
 ## Building
 
 ```sh
-brew install llvm@20 lld@20 ninja cmake
-python configure.py --macos
-ninja macos                    # build/macos/OpenCE.app
+xcode-select --install                          # Xcode's command line tools, if missing
+brew install llvm@20 lld@20 ninja cmake         # Homebrew: https://brew.sh
+python3 configure.py --macos --macos-arch native
+ninja macos                                     # build/macos/OpenCE.app
 ```
 
-The guests are built with Homebrew's LLVM 20 and lld, and Apple Silicon's
-with a pass plugin built against it (`compiler/guest_rebase.cpp`). The first
+Xcode's command line tools build the host (Apple's clang, the SDK and its
+frameworks). The guests need an LLVM 20 with every target and lld, which
+Apple's clang cannot stand in for: it links no ELF, and loads no pass plugin
+(Apple Silicon's guest is compiled through `compiler/guest_rebase.cpp`, built
+against the same LLVM). `configure.py --macos` looks for Homebrew's `llvm@20`
+and `lld@20` (also at a prefix of your own, through `brew --prefix`), then
+MacPorts' `llvm-20`; `--macos-llvm DIR` (or `HALO_MACOS_LLVM`) names another
+LLVM 20 that has `ld.lld`. It stops with a list of whatever is missing, cmake
+and ninja included, before downloading anything.
+
+`--macos-arch native` builds a guest and a host for this Mac only, half the
+work of the default, `universal`, which builds both guests and a universal
+host (`arm64` and `x86_64` pick one Mac by name). The first
 `configure.py --macos` downloads musl, SDL3 and ANGLE, OpenGL ES on Metal, into
 `build/macos/third_party`
 (kivy/angle-builder's universal build of Chromium 7151's ANGLE, BSD-3-Clause);

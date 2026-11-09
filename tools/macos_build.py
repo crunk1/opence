@@ -1,9 +1,13 @@
 import hashlib
+import os
+import platform
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Tuple
 
 from .linux_build import (GAME_FLAGS, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, STB_VORBIS_SOURCE,
                           XDK_INCLUDE, compile_launcher, configuration_defines, game_defines_and_includes,
@@ -39,10 +43,15 @@ ANGLE_URL = ("https://github.com/kivy/angle-builder/releases/download/chromium-7
              "angle-macos-universal.tar.gz")
 ANGLE_SHA256 = "b87f1d0144218a0699859340bfc9864949190d5f4b4d19d4265c3ab561fcd078"
 ANGLE_DIR = THIRD_PARTY / "angle"
-HOMEBREW = next((Path(prefix) for prefix in ("/opt/homebrew", "/usr/local") if Path(prefix, "opt/llvm@20").is_dir()),
-                Path("/opt/homebrew"))
-LLVM_BIN = HOMEBREW / "opt/llvm@20/bin"
-LLD_BIN = HOMEBREW / "opt/lld@20/bin"
+# The guests are built with an LLVM of this major version that has every
+# target (the Intel guest is x86-64 code, Apple Silicon's AArch64) and lld;
+# Apple Silicon's pass plugin is built against the same LLVM. Xcode's clang
+# cannot stand in: it links no ELF and loads no pass plugins. Homebrew's
+# llvm@20 (with lld@20) is the one the build is checked with.
+LLVM_MAJOR = 20
+HOMEBREW_PREFIXES = (Path("/opt/homebrew"), Path("/usr/local"))
+MACPORTS_LLVM = Path(f"/opt/local/libexec/llvm-{LLVM_MAJOR}")
+GUEST_ARCHES = ("x86_64", "arm64")
 MACOS_MINIMUM = "11.0"
 MACOS_FRAMEWORKS = ("Cocoa", "IOKit", "CoreAudio", "AudioToolbox", "CoreVideo", "Carbon", "ForceFeedback",
                     "GameController", "CoreHaptics", "Metal", "QuartzCore", "UniformTypeIdentifiers", "AVFoundation",
@@ -141,6 +150,96 @@ def macos_configure_inputs() -> List[Path]:
     return [Path(__file__), PORT_DIR, RUNTIME_DIR, LINUX_DIR / "src", *hud_configure_inputs()]
 
 
+def _brew_prefix(formula: str) -> Optional[Path]:
+    """where Homebrew keeps the formula, if brew is on the PATH and it is installed"""
+    brew = shutil.which("brew")
+    if not brew:
+        return None
+    result = subprocess.run([brew, "--prefix", formula], capture_output=True, text=True, check=False)
+    prefix = Path(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip() else None
+    return prefix if prefix and prefix.is_dir() else None
+
+
+def _find_tool(candidates: List[Path], *names: str) -> Tuple[Optional[Path], List[str]]:
+    """the first folder of the candidates holding every name, and the folders looked in"""
+    looked: List[str] = []
+    for folder in candidates:
+        if str(folder) in looked:
+            continue
+        looked.append(str(folder))
+        if all((folder / name).is_file() for name in names):
+            return folder, looked
+    return None, looked
+
+
+def macos_arches(sln: Any) -> List[str]:
+    """the Macs the build is for (configure.py --macos-arch): both, or one"""
+    wanted = getattr(sln, "macos_arch", None) or "universal"
+    if wanted == "native":
+        machine = platform.machine()
+        if machine == "x86_64" and sys.platform == "darwin":
+            # (an Intel Python under Rosetta reports x86_64 on an Apple Silicon Mac)
+            result = subprocess.run(["sysctl", "-in", "hw.optional.arm64"], capture_output=True, text=True,
+                                    check=False)
+            if result.stdout.strip() == "1":
+                machine = "arm64"
+        wanted = "arm64" if machine in ("arm64", "aarch64") else "x86_64"
+    return list(GUEST_ARCHES) if wanted == "universal" else [wanted]
+
+
+def macos_toolchain(sln: Any) -> SimpleNamespace:
+    """the LLVM the guests are built with (clang, llvm-config, llvm-ar and
+    ld.lld), looked for as configure.py --macos-llvm says; stops with what is
+    missing, and how to get it, rather than leaving the build to fail at its
+    first compile"""
+    given = getattr(sln, "macos_llvm", None) or os.environ.get("HALO_MACOS_LLVM")
+    llvm_candidates: List[Path] = []
+    lld_candidates: List[Path] = []
+    if given:
+        prefix = Path(given).expanduser()
+        llvm_candidates += [prefix / "bin", prefix]
+        lld_candidates += [prefix / "bin", prefix]
+    else:
+        brew_llvm = _brew_prefix(f"llvm@{LLVM_MAJOR}")
+        if brew_llvm:
+            llvm_candidates.append(brew_llvm / "bin")
+        llvm_candidates += [prefix / "opt" / f"llvm@{LLVM_MAJOR}" / "bin" for prefix in HOMEBREW_PREFIXES]
+        llvm_candidates.append(MACPORTS_LLVM / "bin")
+    llvm_bin, looked_llvm = _find_tool(llvm_candidates, "clang", "llvm-config", "llvm-ar")
+    if llvm_bin:
+        lld_candidates.insert(0, llvm_bin)
+    brew_lld = _brew_prefix(f"lld@{LLVM_MAJOR}")
+    if brew_lld:
+        lld_candidates.append(brew_lld / "bin")
+    lld_candidates += [prefix / "opt" / f"lld@{LLVM_MAJOR}" / "bin" for prefix in HOMEBREW_PREFIXES]
+    lld_candidates.append(MACPORTS_LLVM / "bin")
+    lld_bin, looked_lld = _find_tool(lld_candidates, "ld.lld")
+
+    problems = []
+    if not llvm_bin:
+        problems.append(f"no LLVM {LLVM_MAJOR} (clang, llvm-config and llvm-ar); looked in " + ", ".join(looked_llvm))
+    if not lld_bin:
+        problems.append("no ld.lld; looked in " + ", ".join(looked_lld))
+    for tool in ("cmake", "ninja"):
+        if not shutil.which(tool):
+            problems.append(f"no {tool} on the PATH")
+    if problems:
+        raise SystemExit(
+            "macOS build: tools it needs are missing:\n" + "".join(f"  - {problem}\n" for problem in problems) +
+            "Xcode's command line tools do not provide them (Apple's clang links no ELF and loads no pass\n"
+            "plugins). With Homebrew (https://brew.sh):\n"
+            f"  brew install llvm@{LLVM_MAJOR} lld@{LLVM_MAJOR} ninja cmake\n"
+            f"or name an LLVM {LLVM_MAJOR} that has ld.lld with configure.py --macos-llvm DIR (or HALO_MACOS_LLVM).")
+    clang = llvm_bin / "clang"
+    version = subprocess.run([str(clang), "--version"], capture_output=True, text=True, check=False).stdout
+    match = re.search(r"clang version (\d+)", version)
+    if not match or int(match.group(1)) != LLVM_MAJOR:
+        print(f"macOS build: {clang} is clang {match.group(1) if match else '?'}; the build is checked with "
+              f"LLVM {LLVM_MAJOR}, whose API port/macos/compiler/guest_rebase.cpp is written for", file=sys.stderr)
+    return SimpleNamespace(llvm_bin=llvm_bin, clang=clang, llvm_config=llvm_bin / "llvm-config",
+                           llvm_ar=llvm_bin / "llvm-ar", lld=lld_bin / "ld.lld")
+
+
 def fetch_third_party() -> None:
     THIRD_PARTY.mkdir(parents=True, exist_ok=True)
     if not MUSL_DIR.is_dir():
@@ -200,28 +299,29 @@ def generate_macos_build(n: Writer, sln: Any) -> None:
     config_path = LINUX_DIR / "port.json"
     if not getattr(sln, "macos", False) or not config_path.is_file():
         return
+    tools = macos_toolchain(sln)
+    arches = macos_arches(sln)
     try:
         fetch_third_party()
         fetch_angle()
     except (subprocess.CalledProcessError, OSError) as error:
-        print(f"macOS build disabled: cannot fetch musl, SDL3 or ANGLE ({error})", file=sys.stderr)
-        return
+        raise SystemExit(f"macOS build: cannot fetch musl, SDL3 or ANGLE ({error})")
     import json
     config: Dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
 
-    n.comment("macOS build (ninja macos); see port/macos/README.md")
-    n.variable("macos_guest_cc", LLVM_BIN / "clang")
+    n.comment(f"macOS build (ninja macos) for {' and '.join(arches)}, with {tools.llvm_bin}; see port/macos/README.md")
+    n.variable("macos_guest_cc", tools.clang)
     n.rule(name="macos_copy", command="cp $in $out", description="MACOS COPY $out")
 
     plugin = BUILD / "guest_rebase.dylib"
-    llvm_flags = subprocess.run([str(LLVM_BIN / "llvm-config"), "--cxxflags"], capture_output=True, text=True,
+    llvm_flags = subprocess.run([str(tools.llvm_config), "--cxxflags"], capture_output=True, text=True,
                                 check=True).stdout.strip()
     n.rule(name="macos_plugin",
            command=f"clang++ -shared -fPIC -O2 {llvm_flags} $in -o $out -Wl,-undefined,dynamic_lookup",
            description="MACOS PLUGIN $out")
     n.build(outputs=plugin, rule="macos_plugin", inputs=PORT_DIR / "compiler" / "guest_rebase.cpp")
 
-    resource_dir = subprocess.run([str(LLVM_BIN / "clang"), "-print-resource-dir"], capture_output=True, text=True,
+    resource_dir = subprocess.run([str(tools.clang), "-print-resource-dir"], capture_output=True, text=True,
                                   check=True).stdout.strip()
     n.rule(name="macos_guest_cc",
            command=f"{compile_launcher(sln)}$macos_guest_cc -MMD -MF $out.d $cflags -c $in -o $out",
@@ -233,10 +333,10 @@ def generate_macos_build(n: Writer, sln: Any) -> None:
            description="MACOS CC $out", depfile="$out.d", deps="gcc")
     n.rule(name="macos_guest_as", command="$macos_guest_cc --target=$target -c $in -o $out",
            description="MACOS AS $out")
-    n.rule(name="macos_ar", command=f"rm -f $out && {LLVM_BIN}/llvm-ar rcs $out @$out.rsp",
+    n.rule(name="macos_ar", command=f"rm -f $out && {tools.llvm_ar} rcs $out @$out.rsp",
            description="MACOS AR $out", rspfile="$out.rsp", rspfile_content="$in_newline")
     n.rule(name="macos_guest_link",
-           command=(f"{LLD_BIN}/ld.lld -m $emulation -static -nostdlib -T {PORT_DIR / 'guest' / 'guest.ld'} "
+           command=(f"{tools.lld} -m $emulation -static -nostdlib -T {PORT_DIR / 'guest' / 'guest.ld'} "
                     "--error-limit=0 -Map $out.map -o $out @$out.rsp $libc"),
            description="MACOS LINK $out", rspfile="$out.rsp", rspfile_content="$in_newline")
     n.rule(name="macos_alltypes", command=f"sed -f {MUSL_DIR}/tools/mkalltypes.sed $in > $out",
@@ -257,14 +357,14 @@ def generate_macos_build(n: Writer, sln: Any) -> None:
 
     images = {}
     syscall_headers = {}
-    for arch in GUEST_ABI_FLAGS:
+    for arch in arches:
         images[arch], syscall_headers[arch], host_table_c = guest_image(n, sln, config, arch, plugin, resource_dir)
 
 
     sdl_build = BUILD / "sdl3"
     libsdl = sdl_build / "libSDL3.a"
     n.rule(name="macos_sdl3",
-           command=(f"cmake -S {SDL_DIR} -B {sdl_build} -G Ninja '-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64' "
+           command=(f"cmake -S {SDL_DIR} -B {sdl_build} -G Ninja '-DCMAKE_OSX_ARCHITECTURES={';'.join(arches)}' "
                     f"-DCMAKE_OSX_DEPLOYMENT_TARGET={MACOS_MINIMUM} -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF "
                     "-DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF "
                     f"> {BUILD}/sdl3-configure.log && ninja -C {sdl_build} > {BUILD}/sdl3-build.log"),
@@ -275,8 +375,9 @@ def generate_macos_build(n: Writer, sln: Any) -> None:
     host_obj_dir = BUILD / "host" / "obj"
     n.rule(name="macos_host_cc", command="clang -MMD -MF $out.d $cflags -c $in -o $out",
            description="MACOS HOST CC $out", depfile="$out.d", deps="gcc")
+    host_arches = " ".join(f"-arch {arch}" for arch in arches)
     host_cflags = " ".join([
-        "-arch x86_64 -arch arm64", f"-mmacosx-version-min={MACOS_MINIMUM}", "-O2", "-g", "-Wall",
+        host_arches, f"-mmacosx-version-min={MACOS_MINIMUM}", "-O2", "-g", "-Wall",
         "-Wno-unused-function", f"-I{PORT_DIR}/host", f"-I{PORT_DIR}/include",
         f"-I{SDL_DIR}/include", f"-I{LINUX_DIR}/src", f"-isystem {ANGLE_DIR}/include",
         *(f"-Xarch_{arch} -iquote{header.parent.parent}" for arch, header in syscall_headers.items()),
@@ -310,9 +411,9 @@ def generate_macos_build(n: Writer, sln: Any) -> None:
     host = app / "MacOS" / "halo"
     frameworks = [app / "Frameworks" / name for name in ("libEGL.dylib", "libGLESv2.dylib")]
     n.rule(name="macos_host_link",
-           command=(f"clang -arch x86_64 -arch arm64 -mmacosx-version-min={MACOS_MINIMUM} -o $out $in {libsdl} "
-                    "-Xarch_x86_64 -Wl,-pagezero_size,0x1000 "
-                    f"-L{app / 'Frameworks'} -lEGL -lGLESv2 -Wl,-rpath,@executable_path/../Frameworks "
+           command=(f"clang {host_arches} -mmacosx-version-min={MACOS_MINIMUM} -o $out $in {libsdl} "
+                    + ("-Xarch_x86_64 -Wl,-pagezero_size,0x1000 " if "x86_64" in arches else "")
+                    + f"-L{app / 'Frameworks'} -lEGL -lGLESv2 -Wl,-rpath,@executable_path/../Frameworks "
                     + " ".join(f"-framework {name}" for name in MACOS_FRAMEWORKS)),
            description="MACOS HOST LINK $out")
     n.build(outputs=host, rule="macos_host_link", inputs=host_objects, implicit=[libsdl, *frameworks])

@@ -96,6 +96,20 @@ parser.add_argument(
     help="generate the macOS build (`ninja macos`, port/macos/README.md) and make it the default target",
 )
 parser.add_argument(
+    "--macos-llvm",
+    metavar="DIR",
+    type=Path,
+    help="the LLVM 20 the macOS guests are built with: a prefix (or bin folder) with clang, llvm-config, "
+    "llvm-ar and ld.lld (default: HALO_MACOS_LLVM, then Homebrew's llvm@20 and lld@20, then MacPorts' llvm-20)",
+)
+parser.add_argument(
+    "--macos-arch",
+    choices=["universal", "native", "arm64", "x86_64"],
+    default="universal",
+    help="the Macs the macOS build is for: universal (the default: Intel and Apple Silicon, a guest for each), "
+    "native (this Mac's only, half the build) or one of the two",
+)
+parser.add_argument(
     "--web-emcc",
     type=str,
     help="Emscripten's emcc for `ninja web` (default: emcc on the PATH, then EMSDK's or ~/emsdk's)",
@@ -153,6 +167,8 @@ sln = SimpleNamespace(
     android_guest_cc=args.android_guest_cc,
     web_emcc=args.web_emcc,
     macos=args.macos,
+    macos_llvm=args.macos_llvm,
+    macos_arch=args.macos_arch,
 )
 if not is_windows():
     sln.windows_cc = args.windows_cc
