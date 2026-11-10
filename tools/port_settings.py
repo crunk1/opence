@@ -2016,11 +2016,13 @@ def _lobby() -> list:
 def _join4(base: str) -> list:
     """ADD PLAYER's screen: the Xbox's split screen profile select (its own
     widgets and bitmaps, ui\\shell\\...\\4way_profile_select), a quarter for
-    each controller. A controller not playing presses A to join, chooses its
+    each controller. A controller not playing (controller 1 too, once its
+    player left a game the others stayed in) presses A to join, chooses its
     profile on the Xbox's spinner ("player profile list initialize": one no
     other player has) and presses A to select it; B goes back a step. A
     selected or playing quarter's A (or Enter) brings the players who
-    selected theirs into the lobby, player 1's B goes back without them. The
+    selected theirs into the lobby, player 1's B, while it is not joining,
+    goes back without them. The
     keyboard's SPACE makes the keyboard player 1 alone, freeing the gamepad
     it shared to join (menu_functions.c's join4). Each quarter takes its own
     controller's presses (pc_menu_screen_routes_by_controller)"""
@@ -2033,9 +2035,9 @@ def _join4(base: str) -> list:
                                "pass_handled_to_all_children")],
                     ['<on event="created" run="port join4 open"/>',
                      '<on event="created" run="net server defer start"/>',
-                     # (player 1's B, Escape: back without them; a screen
-                     # with no B of its own goes back at any controller's,
-                     # before its quarters see it)
+                     # (player 1's B, Escape, while it is not joining: back
+                     # without them; a screen with no B of its own goes back
+                     # at any controller's, before its quarters see it)
                      '<on event="b" run="port join4 back" back="true"/>',
                      '<on event="back" run="port join4 back" back="true"/>',
                      '<data input="port join4 update"/>',
