@@ -1350,9 +1350,10 @@ void halo_virtual_gamepads_start(void)
 
 static void virtual_gamepads_attach(void)
 {
-#ifdef HALO_ANDROID
-	/* (the Android host's SDL has no virtual joysticks for the guest: the
-	automated test's gamepads are the desktop's) */
+#if defined(HALO_ANDROID) || defined(HALO_MACOS)
+	/* (the Android and Mac hosts' SDL has no virtual joysticks for the guest,
+	which reaches it only through guest_sdl.c: the automated test's gamepads
+	are the desktop's) */
 	virtual_pad_count = 0;
 #else
 	long wanted = config_integer("debug.virtual_gamepads");
@@ -1421,7 +1422,7 @@ static int virtual_button(const char *what, size_t length)
 /* the script's state at this moment, set on the pads */
 static void virtual_gamepads_update(void)
 {
-#ifndef HALO_ANDROID
+#if !defined(HALO_ANDROID) && !defined(HALO_MACOS)
 	BOOL pressed[PORT_COUNT][SDL_GAMEPAD_BUTTON_COUNT];
 	int triggers[PORT_COUNT][2];
 	BOOL keyboard_pressed = FALSE, keyboard_enter = FALSE;

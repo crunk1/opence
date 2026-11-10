@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from tools import ninja_syntax
 from tools.android_build import android_configure_inputs, generate_android_build
 from tools.linux_build import check_profile_options, generate_linux_build, linux_configure_inputs
+from tools.macos_build import generate_macos_build, macos_configure_inputs
 from tools.web_build import generate_web_build, web_configure_inputs
 from tools.windows_build import generate_windows_build, windows_configure_inputs
 
@@ -90,6 +91,25 @@ parser.add_argument(
     help="clang with the arm64_32 target for the Android guest (default: clang)",
 )
 parser.add_argument(
+    "--macos",
+    action="store_true",
+    help="generate the macOS build (`ninja macos`, port/macos/README.md) and make it the default target",
+)
+parser.add_argument(
+    "--macos-llvm",
+    metavar="DIR",
+    type=Path,
+    help="the LLVM 20 the macOS guests are built with: a prefix (or bin folder) with clang, llvm-config, "
+    "llvm-ar and ld.lld (default: HALO_MACOS_LLVM, then Homebrew's llvm@20 and lld@20, then MacPorts' llvm-20)",
+)
+parser.add_argument(
+    "--macos-arch",
+    choices=["universal", "native", "arm64", "x86_64"],
+    default="universal",
+    help="the Macs the macOS build is for: universal (the default: Intel and Apple Silicon, a guest for each), "
+    "native (this Mac's only, half the build) or one of the two",
+)
+parser.add_argument(
     "--web-emcc",
     type=str,
     help="Emscripten's emcc for `ninja web` (default: emcc on the PATH, then EMSDK's or ~/emsdk's)",
@@ -146,6 +166,9 @@ sln = SimpleNamespace(
     android_ndk=args.android_ndk,
     android_guest_cc=args.android_guest_cc,
     web_emcc=args.web_emcc,
+    macos=args.macos,
+    macos_llvm=args.macos_llvm,
+    macos_arch=args.macos_arch,
 )
 if not is_windows():
     sln.windows_cc = args.windows_cc
@@ -173,6 +196,7 @@ generate_linux_build(n, sln)
 generate_android_build(n, sln)
 generate_windows_build(n, sln)
 generate_web_build(n, sln)
+generate_macos_build(n, sln)
 
 n.comment("Reconfigure on change")
 n.rule(
@@ -191,13 +215,14 @@ n.build(
         *android_configure_inputs(),
         *windows_configure_inputs(),
         *web_configure_inputs(),
+        *macos_configure_inputs(),
     ],
 )
 n.newline()
 
 # the build for this computer, where it could be generated (the Windows
 # build is left out when SDL cannot be fetched, for instance)
-default = "windows" if is_windows() or sln.windows_cross else "linux"
+default = "macos" if sln.macos else "windows" if is_windows() or sln.windows_cross else "linux"
 if f"\nbuild {default}: " in out.getvalue():
     n.comment("Default rule: the build for this computer")
     n.default(default)
