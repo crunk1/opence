@@ -480,6 +480,9 @@ symbols in this file:
 #include "server_director.h" /* port: port/linux/game/server_director.c */
 #include "bots.h" /* port: port/linux/game/bots.c */
 
+/* port: the platform layer's settings (port/linux/src/port_config.c) */
+int config_boolean(const char *name);
+
 /* port: internet play's Discord presence (port/linux/src/p2p.c), and the
 server browser's listing of a public game (p2p_lobby.c) */
 void p2p_set_game_player_counts(int count, int maximum);
@@ -5499,6 +5502,15 @@ boolean network_game_server_reset_to_pregame(
 	 */
 	server->game.number_of_games_played =
 		(long)((unsigned long)server->game.number_of_games_played + 1);
+	/* port: a new seed for each game of the lobby, if the host asks
+	(network.reroll_random_seed). The Xbox game drew the seed once, when the
+	lobby was made (create_global_network_game_server), and kept it, so each
+	game of the lobby repeated the first's random draws: the players started
+	where they had started the game before. The settings record sent below
+	carries the seed to every machine, as it did the first, so a build before
+	this takes the new one too */
+	if (config_boolean("network.reroll_random_seed"))
+		server->game.random_seed = seed_random(get_global_local_random_seed_address());
 
 	if (server->state == _network_game_server_state_postgame)
 	{
