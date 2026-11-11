@@ -1,6 +1,7 @@
-"""The lobby's ADD PLAYER screen (port/linux/game/menu_functions.c's join4): controller 1 joins through it too, once
-its player left a game that the machine's other players stayed in, as the other controllers do; not by the keyboard's
-SPACE (an A of its port); its B steps back while it is choosing; and the usual lobby, player 1 in, is as before."""
+"""The lobby's ADD PLAYER screen (port/linux/game/menu_functions.c's join4): a controller not playing joins through it
+whichever port it is on, controller 1 included once its player left a game that the machine's other players stayed in;
+not by the keyboard's SPACE (an A of its port); its B steps back while it is choosing; and the usual lobby, player 1
+in, is as before."""
 import re
 import sys
 from pathlib import Path
@@ -12,8 +13,8 @@ from harness import CHECK_FAILED, build, enum_with, function, mutated, read, run
 
 CASES = ['player1-opener', 'player2-opener', 'player1-rejoins', 'player1-playing', 'player1-back-steps',
          'space-not-a-join']
-FUNCTIONS = ('lobby_join_reset', 'lobby_controller_playing', 'join4_notice', 'join4_open', 'join4_join',
-             'join4_set', 'join4_back', 'join4_done')
+FUNCTIONS = ('lobby_join_reset', 'lobby_controller_playing', 'join4_notice', 'join4_open', 'join4_space',
+             'join4_join', 'join4_set', 'join4_back', 'join4_done')
 
 # a fault in menu_functions.c, the function it is in, and the case that must catch it
 NEGATIVE_CONTROLS = {
@@ -26,7 +27,7 @@ NEGATIVE_CONTROLS = {
          'return controller > 0 && controller < MAXIMUM_LOCAL_PLAYERS'),
         'join4_join', 'player1-rejoins'),
     'join-by-space': (
-        (' && !(controller == 0 && halo_keyboard_join_held());', ';'),
+        (' && !join4_space(controller);', ';'),
         'join4_join', 'space-not-a-join'),
     'done-port-1-not-waited-for': (
         ('for (controller = 0; controller < MAXIMUM_LOCAL_PLAYERS; controller++)\n\t{\n'

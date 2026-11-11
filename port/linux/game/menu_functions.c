@@ -5880,10 +5880,9 @@ static boolean lobby_join_reset(void)
 }
 
 /* "port lobby add player" (ADD PLAYER, and player 1's Y): its 4-way screen
-opens ("port join4 open"). That screen is player 1's, whose START ends it
-(or joins, when its player is out: join4_join), and a screen a press opens
-is the presser's: another controller's press asks player 1's Y instead
-(FALSE: nothing opens for it) */
+opens ("port join4 open"). That screen is player 1's (its B: join4_back),
+and a screen a press opens is the presser's: another controller's press
+asks player 1's Y instead (FALSE: nothing opens for it) */
 static boolean lobby_add_player(short controller)
 {
 	if (lobby_local_player_count() >= MAXIMUM_LOCAL_PLAYERS)
@@ -6525,11 +6524,12 @@ each controller. A controller not playing presses A in its quarter to join,
 chooses a profile on the Xbox's spinner, and presses A to select it ("1wide
 plyr prof set for game": the controller's active profile); B goes back a
 step. A selected or playing quarter's A (or Enter) brings the players who
-selected theirs into the lobby; player 1's B goes back without them. The
-keyboard's SPACE makes the keyboard player 1 alone, when it shares player
-1 with a gamepad and a port is free (xinput_sdl.c's halo_keyboard_alone_set):
-that gamepad then joins in a quarter of its own. Each quarter takes its own
-controller's presses (pc_menu_screen_routes_by_controller) */
+selected theirs into the lobby; player 1's B goes back without them, unless
+player 1 is itself joining. The keyboard's SPACE makes the keyboard player
+1 alone, when it shares player 1 with a gamepad and a port is free
+(xinput_sdl.c's halo_keyboard_alone_set): that gamepad then joins in a
+quarter of its own. Each quarter takes its own controller's presses
+(pc_menu_screen_routes_by_controller) */
 
 #define JOIN4_NAME "pc\\main_menu\\multiplayer_type_select\\lobby\\join4_screen"
 
@@ -6624,15 +6624,20 @@ static boolean join4_open(struct widget_instance *screen)
 	return TRUE;
 }
 
+/* whether a press of this controller is the keyboard's SPACE: an A of the
+port the keyboard shares with the first gamepad, which on this screen frees
+that gamepad (join4_keyboard) rather than joining, selecting or finishing */
+static boolean join4_space(short controller)
+{
+	return controller == 0 && halo_keyboard_join_held();
+}
+
 /* "port join4 join" (A, START): a controller not playing joins (FALSE:
-its quarter stays). Controller 1 too, when its player left a game that the
-machine's other players stayed in (its START opened the screen:
-lobby_join_start), but not by the keyboard's SPACE, an A of its port
-(join4_keyboard's) */
+its quarter stays, and for the keyboard's SPACE) */
 static boolean join4_join(short controller)
 {
 	return controller >= 0 && controller < MAXIMUM_LOCAL_PLAYERS && input_has_gamepad(controller) &&
-		!lobby_controller_playing(controller) && !(controller == 0 && halo_keyboard_join_held());
+		!lobby_controller_playing(controller) && !join4_space(controller);
 }
 
 /* whether another player of this machine plays, or has selected, the
@@ -6673,8 +6678,8 @@ static boolean join4_select(struct widget_instance *widget, struct event_record 
 {
 	short controller = controller_of(widget);
 
-	/* (controller 1's spinner: not by the keyboard's SPACE, an A of its port) */
-	if (controller == 0 && halo_keyboard_join_held())
+	/* (not the keyboard's SPACE: join4_space) */
+	if (join4_space(controller))
 		return FALSE;
 	if (!game_function("1wide plyr prof set for game", widget, event, widget_deleted))
 		return FALSE;
@@ -6696,9 +6701,9 @@ static boolean join4_set(short controller, unsigned char state)
 	return TRUE;
 }
 
-/* "port join4 back" (player 1's B): back to the lobby, nobody added
-(FALSE for another player's, and for controller 1's while it is choosing
-or has selected a profile: its quarter's B steps back) */
+/* "port join4 back" (the screen's B, player 1's): back to the lobby,
+nobody added (FALSE for another controller's, and for a joining player
+1's: its quarter's B steps back) */
 static boolean join4_back(short controller)
 {
 	if (controller != 0 || join4.state[0] != _join4_away)
@@ -6708,14 +6713,14 @@ static boolean join4_back(short controller)
 }
 
 /* "port join4 done" (a selected or playing quarter's A): those who
-selected their profile join, controller 1 among them, back to the lobby
-(whose "net splitscreen prejoin players" adds them); FALSE while a player
-is still choosing, and for the keyboard's SPACE (join4_keyboard's) */
+selected their profile join, back to the lobby (whose "net splitscreen
+prejoin players" adds them); FALSE while a player is still choosing, and
+for the keyboard's SPACE (join4_space) */
 static boolean join4_done(short pressed_by)
 {
 	short controller;
 
-	if (pressed_by == 0 && halo_keyboard_join_held())
+	if (join4_space(pressed_by))
 		return FALSE;
 	for (controller = 0; controller < MAXIMUM_LOCAL_PLAYERS; controller++)
 	{
