@@ -338,18 +338,17 @@ controller chooses the level and the difficulty. A co-op game does
 not continue a saved game of one player.
 
 Network games have split screen too: up to 4 players on each computer. The
-game lobby's ADD PLAYER button, or another controller's START, opens the
-Xbox's SELECT PROFILE screen (its own widgets): a quarter for each
-controller. Each controller not yet playing presses A to join, chooses a
-profile with left and right (it starts on one no other player has, and one
-another player has cannot be selected), and presses A to select it; its B
-goes back a step. Controller 1 joins the same way when its player left a
-game that the computer's other players stayed in (its START in the lobby
-opens the screen). A when all players have selected their profiles (Enter
-on the keyboard) brings them into the lobby; player 1's B (Escape), while
-it is not joining, goes back without them. The keyboard and the first gamepad share controller 1 until
-SPACE is pressed on that screen: the keyboard is then player 1 alone, and
-that gamepad joins in a quarter of its own (with four gamepads, every
+game lobby's ADD PLAYER button, or START on a controller that is not
+playing, opens the Xbox's SELECT PROFILE screen (its own widgets): a
+quarter for each controller. Each controller not yet playing presses A to
+join, chooses a profile with left and right (it starts on one no other
+player has, and one another player has cannot be selected), and presses A
+to select it; its B goes back a step. A when all players have selected
+their profiles (Enter on the keyboard) brings them into the lobby; player
+1's B (Escape) goes back without them, unless player 1 is itself joining.
+The keyboard and the first gamepad share controller 1 until SPACE is
+pressed on that screen: the keyboard is then player 1 alone, and that
+gamepad joins in a quarter of its own (with four gamepads, every
 controller is taken, and the keyboard stays with the first). The screen's
 bottom left lists the keyboard's keys. Two players on one profile get
 different names from the host. A
